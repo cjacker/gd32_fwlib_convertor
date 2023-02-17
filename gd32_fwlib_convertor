@@ -1,0 +1,118 @@
+#!/bin/bash
+CUR_DIR="$(pwd)"
+
+usage()
+{
+  echo "Convert GD32F Firmware Library to gcc and makefile project."
+  echo "Usage:"
+  echo "gd32_fwlib_convertor <official fwlib archive file>"
+}
+
+# if no arg,
+if [ $# -ne 1 ]; then
+	usage
+  exit
+fi
+
+# arg
+ARCHIVE_FILE=$1
+if [ ! -f $ARCHIVE_FILE ]; then
+  echo "\"$ARCHIVE_FILE\" not exist."
+  exit
+fi
+
+
+# exist
+ARCHIVE_FILE_EXT=${ARCHIVE_FILE##*.}
+TARGET_DIR=$(basename $ARCHIVE_FILE "."$ARCHIVE_FILE_EXT)
+
+PART_FAMILY=$(echo $ARCHIVE_FILE|awk -F '_' '{print $1}')
+
+if [ "$ARCHIVE_FILE_EXT""x" != "rar""x" ] && [ "$ARCHIVE_FILE_EXT""x" != "zip""x" ]; then
+  echo "Wrong file extension."
+  exit
+fi
+
+# extract
+echo "Extract official firmware library archive."
+rm -rf $TARGET_DIR
+if [ "$ARCHIVE_FILE_EXT""x" == "rar""x" ]; then
+  unrar x -idq $ARCHIVE_FILE 
+fi
+
+if [ "$ARCHIVE_FILE_EXT""x" == "zip""x" ]; then
+  unzip -q $ARCHIVE_FILE
+fi
+
+# extracted, process and convert
+# covert startup files.
+echo "convert startup asm files."
+STARTUP_TOP_DIR="$TARGET_DIR/Firmware/CMSIS/GD/$PART_FAMILY/Source"
+ARM_STARTUP_DIR=$STARTUP_TOP_DIR"/ARM"
+GCC_STARTUP_DIR=$STARTUP_TOP_DIR"/GCC"
+
+mkdir -p $GCC_STARTUP_DIR
+if [ -d $ARM_STARTUP_DIR ]; then
+  cd $GCC_STARTUP_DIR
+  for sf in `ls $CUR_DIR/$ARM_STARTUP_DIR/startup_*.s`; do
+    $CUR_DIR/startupfile_generator.py $sf
+  done
+  cd $CUR_DIR
+fi
+
+echo "add linker script."
+# Linker script
+mkdir -p $TARGET_DIR/Firmware/Ld
+cp Link.ld  $TARGET_DIR/Firmware/Ld
+
+# dummy main
+mkdir -p $TARGET_DIR/User
+cp main.c $TARGET_DIR/User/
+
+cp Makefile.template $TARGET_DIR
+
+# ready, process source file list
+echo "generate Makefile"
+cd $TARGET_DIR
+find ./Firmware/CMSIS -type f -name "*.c"|sed 's@^\./@@g;s@$@ \\@g' > c_source.list
+find ./Firmware/*_standard_peripheral -type f -name "*.c"|sed 's@^\./@@g;s@$@ \\@g' >> c_source.list
+find ./User -type f -name "*.c"|sed 's@^\./@@g;s@$@ \\@g' >> c_source.list
+
+find ./Firmware/CMSIS -type f -name "*.S"|sed 's@^\./@@g;s@$@ \\@g' > asm_source.list
+
+
+sed "s/C_SOURCE_LIST/$(sed -e 's/[\&/]/\\&/g' -e 's/$/\\n/' c_source.list | tr -d '\n')/" Makefile.template >Makefile
+
+sed -i "s/STARTUP_ASM_SOURCE_LIST/$(sed -e 's/[\&/]/\\&/g' -e 's/$/\\n/' asm_source.list |head -n 1| tr -d '\n'|head -n 1)/" Makefile
+
+sed -i "s/PART_FAMILY/$PART_FAMILY/g" Makefile
+
+rm -rf c_source.list asm_source.list Makefile.template
+
+echo "Done"
+echo "Converted fw lib : $TARGET_DIR"
+echo ""
+echo "##########################################"
+echo "#               README !!!               #"
+echo "##########################################"
+
+echo "Before type 'make', you need to:"
+echo "1. change 'Firmware/Ld/Link.ld', setup FLASH_SIZE and RAM_SIZE ! "
+echo "   gigadevice have so many part models and so many fwlibs,"
+echo "   it's too difficult to set it automatically."
+echo "2. check the 'startup file' in Makefile is match your MCU or not !"
+echo "   if there are more than one startup files, usually follow these rules:"
+echo "     flash size range in 16K - 128K, use 'startup_xxxxx_md.S'"
+echo "     flash size range in 256K - 512K, use 'startup_xxxxx_hd.S'"
+echo "     flash size > 512K, use 'startup_xxxxx_xd.S'"
+echo "     for x05/x07, use 'startup_xxxxx_cl.S'"
+echo "3. change the TARGET in makefile to match your MCU !"
+echo "   do not leave space at the end of target name!"
+echo ""
+echo "NOTE:"
+echo "1. when below error happens"
+echo "   #error \"Please select the target GD32FXXX device in gd32fxxx.h file\""
+echo "   It means you should check the 'gd32fxxx.h' file and add correct defs to 'C_DEFS' in Makefile."
+echo ""
+echo "2. Some official fwlib does not ship core_cmFunc.h/core_cmInstr.h with it !"
+echo "   You can copy them from other related fwlibs."
