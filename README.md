@@ -8,7 +8,7 @@ usage:
 ./gd32_fwlib_convertor <official firmware library rar or zip>
 ```
 
-it's not good, there is still a lot of work need to do manually after converted, but works.
+There is still a lot of work need to do manually after converted, but works.
 
 Tested with all firmware libraries from GigaDevice, 5 of them failed due to lack some CMSIS headers, after supply these missing header files, all firmware library built successfully.
 
