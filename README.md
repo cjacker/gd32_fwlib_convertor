@@ -1,4 +1,4 @@
-# gd32F/E/C/W/L Firmware Library convertor
+# GD32F/E/C/W/L Firmware Library convertor
 
 A script to convert GD32F/E/C/L/W  official firmware library to gcc and makefile project
 
